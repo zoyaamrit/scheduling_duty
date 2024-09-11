@@ -2,8 +2,7 @@ import pandas as pd
 from collections import defaultdict
 import random
 
-def read_data():
-    file_path = '/Users/tanviamrit/Desktop/Halligan/projs/ra_schedule/test.xlsx'
+def read_data(file_path):
     
     excel_data = pd.read_excel(file_path, sheet_name=None)
     availability_dict = defaultdict(dict)
@@ -31,68 +30,76 @@ def read_data():
             elif status == 'Available':
                 availability_by_date[date]['Available'].append(person)
 
-
     return availability_by_date
 
 def assign_dates(availability, max_weekdays, max_weekends):
     assigned_dates = {}
     weekend_count = defaultdict(int)
     weekday_count = defaultdict(int)
-
-    prev = None if not assigned_dates else assigned_dates[max(assigned_dates)]
+    
    
-    # Now assign dates using the grouped data
+    # Assign based on availaibility 
     for date, people in availability.items():
         is_weekday = date not in ['Saturday', 'Sunday']
 
-        prefer_people = people['Prefer']
-        available_people = people['Available']
+        # check who had the previous date 
+        if assigned_dates and assigned_dates[max(assigned_dates)] != 'unassigned':
+            prev = assigned_dates[max(assigned_dates)] 
+        else:
+            prev = None
 
-        if len(prefer_people) > 1 and prev in prefer_people:
-            prefer_people.remove(prev)
+        # Do not consider people who are unavailable
+        prefer = people['Prefer'][:]
+        available = people['Available'][:]
 
-        if len(available_people) > 1 and prev in available_people:
-            available_people.remove(prev)
+        # remove prev from consideration for this date
+        # unless only 1 person is prefer/available
+        if prev and (len(prefer) + len(available)) > 1:
+            if prev in prefer:
+                prefer.remove(prev)
+            elif prev in available:
+                available.remove(prev)
 
+        # Eliminate people if they've already maxed out assigned days 
         if is_weekday:
-            eligible_prefer_people = [p for p in prefer_people if weekday_count[p] < max_weekdays]
-            eligible_available_people = [p for p in available_people if weekday_count[p] < max_weekdays]
+            eligible_prefer = [p for p in prefer if weekday_count[p] <= max_weekdays]
+            eligible_available = [p for p in available if weekday_count[p] <= max_weekdays]
         else:
-            eligible_prefer_people = [p for p in prefer_people if weekend_count[p] < max_weekends]
-            eligible_available_people = [p for p in available_people if weekend_count[p] < max_weekends]
+            eligible_prefer = [p for p in prefer if weekend_count[p] <= max_weekends]
+            eligible_available = [p for p in available if weekend_count[p] <= max_weekends]
 
-        if eligible_prefer_people:
-            candidates = eligible_prefer_people
-        elif eligible_available_people:
-            candidates = eligible_available_people
-        else:
-            assigned_dates[date] = 'unassigned'
-            continue 
-
-        # Assign a person to the date from candidates
+        candidates = eligible_prefer + eligible_available
         random.shuffle(candidates)
-        selected_person = candidates[0]
+        selected_person = candidates[0] if candidates else 'unassigned'
         assigned_dates[date] = selected_person  # Assign one person per day
 
-        prev = selected_person
-
         # Update counts for the selected person
-        if is_weekday:
-            weekday_count[selected_person] += 1
-        else:
-            weekend_count[selected_person] += 1
+        if selected_person != 'unassigned':
+            if is_weekday:
+                weekday_count[selected_person] += 1
+            else:
+                weekend_count[selected_person] += 1
     
-    
-
     return assigned_dates
 
 
-availability = read_data()
-schedule_arr = assign_dates(availability, 18, 10)
+input_path = input("Please enter the input file path: ")
+
+# Ask the user for the maximum number of weekend assignments
+max_weekend = int(input("Enter the maximum number of weekEND assignments: "))
+
+# Ask the user for the maximum number of weekday assignments
+max_weekday = int(input("Enter the maximum number of weekDAY assignments: "))
+
+availability = read_data(input_path)
+schedule_arr = assign_dates(availability, max_weekday, max_weekend)
 
 data = [{'Date': date, 'Assigned to': name} for date, name in schedule_arr.items()]
 df = pd.DataFrame(data)
-output_file = '/Users/tanviamrit/Desktop/Halligan/projs/ra_schedule/schedule.xlsx'  # Specify your desired output path
+df_sorted = df.sort_values(by='Date')
+output_file = './schedule.xlsx'  # Specify your desired output path
 
 with pd.ExcelWriter(output_file) as writer:
-    df.to_excel(writer, sheet_name='Schedule', index=False)
+    df_sorted.to_excel(writer, sheet_name='Schedule', index=False)
+
+print(f"Schedule built with maximum {max_weekday} weekdays and {max_weekend} weekends")
